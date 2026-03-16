@@ -617,10 +617,10 @@ def _search_my_field(self, operator, value):
         return [("id", "in", self._get_no_value_ids())]
     ...
 
-# 19.0 — must also handle "in" with [False]
+# 19.0 — must also handle "in" with OrderedSet({False})
 def _search_my_field(self, operator, value):
     if (operator == "=" and value is False) or (
-        operator == "in" and value == [False]
+        operator == "in" and list(value) == [False]
     ):
         # IMPORTANT: normalize value back when rewriting operator
         value = False
@@ -628,9 +628,11 @@ def _search_my_field(self, operator, value):
     ...
 ```
 
-### Key detail: normalize the value
+### Key detail: OrderedSet, not list
 
-When the optimizer rewrites `("field", "=", False)` to `("field", "in", [False])`, `value` becomes `[False]` instead of `False`. If your search function flips the operator (e.g., `"="` → `"!="`) but forgets to normalize `value` back to `False`, downstream searches will get nonsensical domains like `("other_field", "!=", [False])`.
+The optimizer wraps values in `OrderedSet`, not a plain list. So `value == [False]` will **never match** — you must use `list(value) == [False]` to compare correctly.
+
+Also, when flipping the operator (e.g., `"="` → `"!="`) remember to normalize `value` back to `False`, otherwise downstream searches get nonsensical domains like `("other_field", "!=", OrderedSet({False}))`.
 
 ### Real-world example
 
