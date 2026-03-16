@@ -33,6 +33,7 @@ Covers breaking changes, deprecated APIs, and migration patterns with real code 
 22. [Demo Data Not Installed in Tests](#22-demo-data-not-installed-in-tests)
 23. [Delete Old migrations Folder](#23-delete-old-migrations-folder)
 24. [OCA Migration PR Guidelines](#24-oca-migration-pr-guidelines)
+25. [Search Function Operator Rewriting](#25-search-function-operator-rewriting)
 
 ---
 
@@ -595,6 +596,53 @@ git push origin 19.0-mig-module_name
 
 ---
 
+## 25. Search Function Operator Rewriting
+
+**Severity: HIGH** — Silently breaks search functions on computed non-stored fields.
+
+In Odoo 19, the domain optimizer rewrites `("field", "=", value)` into `("field", "in", [value])` at `OptimizationLevel.BASIC` **before** the field's search function is called at `OptimizationLevel.FULL`. This means search methods that only check for `operator == "="` will never match.
+
+### Root cause
+
+In `odoo/orm/domains.py`, `_OPTIMIZATIONS_FOR[BASIC]["="]` includes `_operator_equal_as_in`, which runs at optimization level 1 (BASIC). Search functions are invoked at level 3 (FULL). So by the time your search function sees the domain, `=` has already become `in`.
+
+### How to fix
+
+Search functions must handle **both** the original and rewritten operator forms:
+
+```python
+# 18.0 — only handles "=" operator
+def _search_my_field(self, operator, value):
+    if operator == "=" and value is False:
+        return [("id", "in", self._get_no_value_ids())]
+    ...
+
+# 19.0 — must also handle "in" with [False]
+def _search_my_field(self, operator, value):
+    if (operator == "=" and value is False) or (
+        operator == "in" and value == [False]
+    ):
+        # IMPORTANT: normalize value back when rewriting operator
+        value = False
+        return [("id", "in", self._get_no_value_ids())]
+    ...
+```
+
+### Key detail: normalize the value
+
+When the optimizer rewrites `("field", "=", False)` to `("field", "in", [False])`, `value` becomes `[False]` instead of `False`. If your search function flips the operator (e.g., `"="` → `"!="`) but forgets to normalize `value` back to `False`, downstream searches will get nonsensical domains like `("other_field", "!=", [False])`.
+
+### Real-world example
+
+`base_tier_validation._search_reviewer_ids` broke because:
+1. Test searched `[("reviewer_ids", "=", False)]`
+2. Optimizer rewrote to `[("reviewer_ids", "in", [False])]`
+3. Search function received `operator="in"`, `value=[False]`
+4. Only checked `operator == "="`, so didn't flip the logic
+5. Returned wrong results (0 records instead of expected)
+
+---
+
 ## Migration Checklist
 
 Use this checklist when migrating a module:
@@ -621,6 +669,7 @@ Use this checklist when migrating a module:
 - [ ] Check psycopg2 imports
 - [ ] Check `FakeModelLoader` → native `add_to_registry`
 - [ ] Check tests don't rely on demo data
+- [ ] Check search functions on computed fields — handle `"in"` operator (optimizer rewrites `"="` to `"in"`)
 - [ ] Run pre-commit for translation formatting
 
 ---
