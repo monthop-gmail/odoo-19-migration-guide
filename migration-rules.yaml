@@ -1,0 +1,289 @@
+# Odoo 18 → 19 Migration Rules
+# Machine-readable patterns for AI agents to detect and fix breaking changes.
+#
+# Structure per rule:
+#   id:          unique identifier
+#   title:       short description
+#   severity:    error (will crash) | warning (deprecated, will break later) | info (style/convention)
+#   file_types:  which files to scan
+#   detect:      regex patterns to find problematic code
+#   fix:         replacement logic
+#   auto_fix:    true = safe to replace automatically, false = needs human review
+#   false_positives: hints for avoiding wrong matches
+#   error_message: the runtime error you'd see if unfixed
+
+rules:
+
+  # ──────────────────────────────────────────────
+  # FIELD RENAMES
+  # ──────────────────────────────────────────────
+
+  - id: field-groups-users
+    title: "res.groups: .users → .user_ids"
+    severity: error
+    file_types: ["*.py", "*.xml", "*.csv"]
+    detect:
+      - pattern: '\.users\b'
+        context: "Look for res.groups recordset access. Ignore if .users is on a custom model."
+      - pattern: '"users"'
+        context: "Look for dict keys in create/write on res.groups"
+      - pattern: "'users'"
+        context: "Look for dict keys in create/write on res.groups"
+    fix:
+      replace: ".users → .user_ids, \"users\" → \"user_ids\", 'users' → 'user_ids'"
+    auto_fix: false
+    false_positives:
+      - ".users could be a field on a custom model, not res.groups"
+      - "Check the model context before replacing"
+    error_message: "AttributeError: 'res.groups' object has no attribute 'users'"
+
+  - id: field-users-groups-id
+    title: "res.users: groups_id → group_ids"
+    severity: error
+    file_types: ["*.py", "*.xml", "*.csv"]
+    detect:
+      - pattern: 'groups_id'
+    fix:
+      search: "groups_id"
+      replace: "group_ids"
+    auto_fix: true
+    false_positives:
+      - "Very unlikely — groups_id is specific to res.users"
+    error_message: "AttributeError: 'res.users' object has no attribute 'groups_id'"
+
+  # ──────────────────────────────────────────────
+  # API CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: api-models-newid
+    title: "models.NewId removed"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'models\.NewId'
+    fix:
+      search: "isinstance(rec.id, models.NewId)"
+      replace: "not isinstance(rec.id, int)"
+      note: "Also remove 'from odoo import models' if NewId was the only reason for the import"
+    auto_fix: true
+    false_positives: []
+    error_message: "AttributeError: module 'odoo.models' has no attribute 'NewId'"
+
+  - id: api-read-group
+    title: "read_group() → _read_group() with aggregates"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: '\.read_group\s*\('
+        context: "Exclude _read_group (already migrated)"
+    fix:
+      note: |
+        1. Replace .read_group( with ._read_group(
+        2. Move aggregated fields from 'fields' param to 'aggregates' param
+        3. Change dict access (group["field"]) to tuple unpacking
+        4. groupby fields now return recordsets, not (id, name) tuples
+    auto_fix: false
+    false_positives: []
+    error_message: "DeprecationWarning or AttributeError on read_group"
+
+  - id: api-context-deprecated
+    title: "rec._context → rec.env.context"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: '\._context\b'
+    fix:
+      search: "._context"
+      replace: ".env.context"
+    auto_fix: true
+    false_positives:
+      - "Unlikely — _context is Odoo-specific"
+    error_message: "DeprecationWarning: use .env.context instead of ._context"
+
+  # ──────────────────────────────────────────────
+  # FIELD DEFINITION CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: field-auto-join
+    title: "One2many auto_join=True removed"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'auto_join\s*=\s*True'
+    fix:
+      search: "auto_join=True"
+      replace: ""
+      note: "Remove the parameter entirely. Clean up trailing comma if needed."
+    auto_fix: true
+    false_positives: []
+    error_message: "TypeError: __init__() got an unexpected keyword argument 'auto_join'"
+
+  # ──────────────────────────────────────────────
+  # METHOD CHANGES (manual review required)
+  # ──────────────────────────────────────────────
+
+  - id: method-button-draft
+    title: "button_draft() no longer calls remove_move_reconcile()"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'def button_draft\s*\('
+    fix:
+      note: |
+        If the module overrides button_draft on account.move and relies on
+        unreconciliation, add before super():
+            self.mapped("line_ids").remove_move_reconcile()
+    auto_fix: false
+    false_positives:
+      - "Only relevant for account.move overrides that depend on reconciliation"
+    error_message: "Silent failure — CABA entries and reconciliation logic won't work"
+
+  - id: method-compute-side-effects
+    title: "Stored compute side effects don't persist on create()"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: '@api\.depends'
+        context: "Check if the compute method writes to fields OTHER than the computed field"
+    fix:
+      note: |
+        Look for patterns where a @api.depends compute method writes to
+        non-computed fields as side effects. These writes won't persist
+        during create() in Odoo 19.
+        Fix: move side-effect writes to a separate method called after create().
+    auto_fix: false
+    false_positives:
+      - "Only problematic if the compute writes to fields it doesn't compute"
+
+  # ──────────────────────────────────────────────
+  # TEST CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: test-company-name
+    title: "Test company names must be unique"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'create\(\s*\{\s*"name"\s*:\s*"My Company"'
+      - pattern: "create\\(\\s*\\{\\s*'name'\\s*:\\s*'My Company'"
+    fix:
+      note: "Change 'My Company' to a unique test name like 'Test Company <ModuleName>'"
+    auto_fix: false
+    false_positives: []
+    error_message: "UniqueViolation: duplicate key value violates unique constraint 'res_company_name_uniq'"
+
+  - id: test-psycopg
+    title: "psycopg2 imports need psycopg3 fallback"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'from psycopg2 import'
+      - pattern: 'import psycopg2'
+    fix:
+      note: |
+        Wrap with try/except:
+            try:
+                from psycopg2 import IntegrityError
+            except ImportError:
+                from psycopg import errors
+                IntegrityError = errors.IntegrityError
+    auto_fix: false
+    false_positives: []
+    error_message: "ModuleNotFoundError: No module named 'psycopg2'"
+
+  - id: test-caba-assertions
+    title: "CABA test assertions: draft entries are deleted, not reversed"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'tax_cash_basis_created_move_ids'
+        context: "Check if test asserts count or existence after draft"
+    fix:
+      note: |
+        In Odoo 19, draft CABA entries are DELETED (not reversed).
+        Change assertions like assertEqual(len(caba), 2) to assertFalse(caba).
+    auto_fix: false
+    false_positives:
+      - "Only relevant if the test sets entries to draft and then checks CABA"
+
+  # ──────────────────────────────────────────────
+  # CODE STYLE
+  # ──────────────────────────────────────────────
+
+  - id: style-lazy-translation
+    title: "Lazy translation formatting (W8301)"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: '_\(\s*"[^"]*"\s*%'
+        context: "String formatting before translation"
+      - pattern: '_\(\s*"[^"]*"\.format\('
+        context: ".format() inside translation"
+      - pattern: '_\(\s*"[^"]*"\s*\+'
+        context: "String concatenation inside translation"
+    fix:
+      note: |
+        Change to: _("Message %s", variable) or _("Message %(name)s", name=variable)
+    auto_fix: false
+    false_positives: []
+    error_message: "pre-commit ruff W8301"
+
+  # ──────────────────────────────────────────────
+  # DOMAIN CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: domain-empty-list
+    title: "Domain with empty list handling"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: '"not in"\s*,\s*\[\]'
+      - pattern: "'not in'\\s*,\\s*\\[\\]"
+      - pattern: '"not in"\s*,\s*res_ids'
+        context: "Check if res_ids could be empty"
+    fix:
+      note: |
+        Handle empty lists explicitly:
+            if not res_ids:
+                return [(1, "=", 1)]  # matches all
+            return [("id", "not in", res_ids)]
+    auto_fix: false
+    false_positives:
+      - "Only problematic if the list can actually be empty at runtime"
+
+# ──────────────────────────────────────────────
+# VERSION BUMP (always apply)
+# ──────────────────────────────────────────────
+
+version_bump:
+  manifest:
+    detect: 'version.*18\.0\.'
+    fix:
+      search: '18.0.\d+\.\d+\.\d+'
+      replace: "19.0.1.0.0"
+  readme:
+    detect: '18\.0'
+    files: ["README.rst", "static/description/index.html"]
+    fix:
+      search: "18.0"
+      replace: "19.0"
+
+# ──────────────────────────────────────────────
+# POST-MIGRATION VALIDATION
+# ──────────────────────────────────────────────
+
+validation:
+  must_not_exist:
+    - pattern: 'groups_id'
+      exception: "custom field named groups_id (not res.users)"
+    - pattern: 'models\.NewId'
+    - pattern: 'auto_join\s*=\s*True'
+      scope: "One2many fields only"
+    - pattern: '\._context\b'
+    - pattern: '\.read_group\s*\('
+      exception: "._read_group( is OK"
+
+  must_exist:
+    - pattern: "version.*19\\.0"
+      file: "__manifest__.py"
+      message: "Version must be updated to 19.0.x.x.x"

@@ -2,6 +2,9 @@
 
 Copy this checklist into your PR description or use it as a reference.
 
+> For AI agents: use `migration-rules.yaml` for machine-readable detect/fix patterns.
+> For full explanations and code examples: see `README.md`.
+
 ## Pre-migration
 
 - [ ] Create branch from upstream/19.0

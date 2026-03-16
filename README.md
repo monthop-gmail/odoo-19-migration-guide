@@ -371,6 +371,33 @@ Use this checklist when migrating a module:
 
 ---
 
+## AI Agent Usage
+
+This repo is optimized for AI-assisted migration. Point your AI agent at this repo and it will know what to do.
+
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Agent instructions — workflow, rules, and guardrails |
+| `migration-rules.yaml` | Machine-readable detect/fix patterns with regex, severity, and auto-fix flags |
+| `README.md` | Full guide with explanations and code examples (this file) |
+| `CHECKLIST.md` | Copy-paste checklist for PR descriptions |
+
+### Quick start with Claude Code
+
+```bash
+# From your Odoo module directory:
+claude "Migrate this module from Odoo 18 to 19. Use the guide at /path/to/odoo-19-migration-guide"
+```
+
+The agent will:
+1. Scan your module against all known breaking changes
+2. Auto-fix safe patterns (field renames, `_context`, `auto_join`)
+3. Flag patterns that need human review (`button_draft`, compute side effects)
+4. Bump version and update URLs
+5. Validate that no known issues remain
+
+---
+
 ## Contributing
 
 Found a new breaking change? Open an issue or PR!
