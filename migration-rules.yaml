@@ -455,6 +455,123 @@ rules:
   # CLEANUP
   # ──────────────────────────────────────────────
 
+  # ──────────────────────────────────────────────
+  # PARTNER TITLE CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: field-partner-title-removed
+    title: "res.partner.title removed from base — use partner_title module (title_id)"
+    severity: error
+    file_types: ["*.py", "*.xml"]
+    detect:
+      - pattern: '\.title\b'
+        context: "On res.partner records — .title is removed. Use .title_id (from OCA partner_title module)"
+      - pattern: '@api\.depends\(.*["\x27]title["\x27]'
+        context: "Depends on title field — should be title_id"
+      - pattern: '"title"\s*:'
+        context: "In create/write dicts for res.partner"
+    fix:
+      note: |
+        1. Add "partner_title" to __manifest__.py depends
+        2. Replace .title with .title_id in code
+        3. Replace "title" with "title_id" in XML views and search domains
+    auto_fix: false
+    false_positives:
+      - ".title could be a field on a non-partner model"
+      - "Check model context before replacing"
+    error_message: "ValueError: Dependency field 'title' not found in model res.partner"
+
+  # ──────────────────────────────────────────────
+  # SAFE_EVAL CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: api-safe-eval-globals-dict
+    title: "safe_eval() globals_dict → context"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'globals_dict\s*='
+        context: "In safe_eval() calls"
+    fix:
+      search: "globals_dict="
+      replace: "context="
+    auto_fix: true
+    false_positives: []
+    error_message: "TypeError: safe_eval() got an unexpected keyword argument 'globals_dict'"
+
+  # ──────────────────────────────────────────────
+  # REMOVED XML IDS
+  # ──────────────────────────────────────────────
+
+  - id: test-user-demo-removed
+    title: "base.user_demo XML ID removed"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'env\.ref\(["\x27]base\.user_demo["\x27]\)'
+    fix:
+      note: |
+        Create test user explicitly:
+          self.env["res.users"].create({
+              "name": "Test User", "login": "test_user", "email": "test@example.com"
+          })
+    auto_fix: false
+    false_positives: []
+    error_message: "ValueError: External ID not found in the system: base.user_demo"
+
+  # ──────────────────────────────────────────────
+  # HR MODULE CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: model-hr-expense-sheet-removed
+    title: "hr.expense.sheet model removed — use hr.expense directly"
+    severity: error
+    file_types: ["*.py", "*.xml", "*.csv"]
+    detect:
+      - pattern: 'hr\.expense\.sheet'
+    fix:
+      note: |
+        hr.expense.sheet is completely removed in Odoo 19.
+        Rewrite all logic to use hr.expense directly.
+        Update models, views, security rules, and tests.
+    auto_fix: false
+    false_positives: []
+    error_message: "KeyError: 'hr.expense.sheet' or model not found errors"
+
+  - id: model-hr-employee-base-removed
+    title: "hr.employee.base abstract model removed — use hr.employee"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'hr\.employee\.base'
+    fix:
+      search: "hr.employee.base"
+      replace: "hr.employee"
+      note: "Also check that your module depends on 'hr' if it didn't before"
+    auto_fix: true
+    false_positives: []
+    error_message: "KeyError: 'hr.employee.base' or MissingError"
+
+  - id: field-user-department-id-moved
+    title: "department_id moved from res.users to hr.employee"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'user\w*\.department_id'
+        context: "On res.users records — department_id is now on hr.employee"
+    fix:
+      note: |
+        Access via employee record instead:
+          user.department_id → user.employee_id.department_id
+        In tests, create hr.employee records linked to users for department assignment.
+    auto_fix: false
+    false_positives:
+      - "Could be accessing department_id on an hr.employee record, which is fine"
+
+  # ──────────────────────────────────────────────
+  # CLEANUP
+  # ──────────────────────────────────────────────
+
   - id: cleanup-migrations-folder
     title: "Delete old migrations/ folder"
     severity: info
@@ -507,6 +624,11 @@ validation:
     - pattern: 'ormcache_context'
     - pattern: 'from odoo import.*SUPERUSER_ID'
     - pattern: 'FakeModelLoader'
+    - pattern: 'globals_dict\s*='
+      scope: "safe_eval() calls only"
+    - pattern: 'env\.ref\(["\x27]base\.user_demo["\x27]\)'
+    - pattern: 'hr\.expense\.sheet'
+    - pattern: 'hr\.employee\.base'
 
   must_exist:
     - pattern: "version.*19\\.0"

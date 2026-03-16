@@ -34,6 +34,12 @@ Covers breaking changes, deprecated APIs, and migration patterns with real code 
 23. [Delete Old migrations Folder](#23-delete-old-migrations-folder)
 24. [OCA Migration PR Guidelines](#24-oca-migration-pr-guidelines)
 25. [Search Function Operator Rewriting](#25-search-function-operator-rewriting)
+26. [res.partner.title Removed from Base](#26-respartnertitle-removed-from-base)
+27. [safe_eval() Signature Changed](#27-safe_eval-signature-changed)
+28. [base.user_demo Removed](#28-baseuser_demo-removed)
+29. [hr.expense.sheet Removed](#29-hrexpensesheet-removed)
+30. [department_id Moved to hr.employee](#30-department_id-moved-to-hremployee)
+31. [OCA Unreleased Dependencies in CI](#31-oca-unreleased-dependencies-in-ci)
 
 ---
 
@@ -673,6 +679,219 @@ Use this checklist when migrating a module:
 - [ ] Check tests don't rely on demo data
 - [ ] Check search functions on computed fields — handle `"in"` operator (optimizer rewrites `"="` to `"in"`)
 - [ ] Run pre-commit for translation formatting
+- [ ] `res.partner.title` → replaced by OCA `partner_title` module (`title_id` field)
+- [ ] `safe_eval()` signature: `globals_dict=` → `context=`
+- [ ] `base.user_demo` removed — create test users explicitly
+- [ ] `hr.expense.sheet` removed — use `hr.expense` directly
+- [ ] `department_id` moved from `res.users` to `hr.employee`
+- [ ] OCA unreleased dependencies — vendor modules + `.codecov.yml` ignore
+
+---
+
+## 26. res.partner.title Removed from Base
+
+In Odoo 19, the `title` field on `res.partner` has been **removed from the base module**. It is now provided by the OCA `partner_title` module as `title_id` (Many2one to `res.partner.title`).
+
+### Impact
+
+Any module that references `partner.title` will fail with:
+
+```
+ValueError: Wrong @depends on '_compute_name' (compute method of field res.partner.name).
+Dependency field 'title' not found in model res.partner.
+```
+
+### How to fix
+
+1. Add `partner_title` to your module's dependencies in `__manifest__.py`
+2. Replace all `title` references with `title_id`
+
+```python
+# 18.0
+@api.depends("title", "firstname", "lastname")
+def _compute_name(self):
+    title = self.title.name
+    self.title = False  # onchange
+
+# 19.0
+@api.depends("title_id", "firstname", "lastname")
+def _compute_name(self):
+    title = self.title_id.name
+    self.title_id = False  # onchange
+```
+
+```python
+# __manifest__.py
+"depends": ["partner_firstname", "partner_title"],  # add partner_title
+```
+
+**Also update XML views and search domains:**
+```python
+# 18.0
+.search([("title", "!=", False)])
+
+# 19.0
+.search([("title_id", "!=", False)])
+```
+
+**Test gotcha:** If `partner_title` installs demo data (like "Miss", "Mr"), creating titles with the same name will violate the unique constraint. Use unique test names.
+
+---
+
+## 27. safe_eval() Signature Changed
+
+In Odoo 19, `safe_eval()` no longer accepts the `globals_dict` keyword argument. The parameter has been renamed to `context`.
+
+```python
+# 18.0
+from odoo.tools.safe_eval import safe_eval
+result = safe_eval(expression, globals_dict={"rec": record})
+
+# 19.0
+from odoo.tools.safe_eval import safe_eval
+result = safe_eval(expression, context={"rec": record})
+```
+
+**New signature:** `safe_eval(expr, /, context=None, *, mode='eval', filename=None)`
+
+**Error message:** `TypeError: safe_eval() got an unexpected keyword argument 'globals_dict'`
+
+---
+
+## 28. base.user_demo Removed
+
+The XML ID `base.user_demo` no longer exists in Odoo 19 CI. Tests that reference it will fail:
+
+```
+ValueError: External ID not found in the system: base.user_demo
+```
+
+### How to fix
+
+Create test users explicitly instead of using `env.ref`:
+
+```python
+# 18.0
+self.test_user = self.env.ref("base.user_demo")
+
+# 19.0
+self.test_user = self.env["res.users"].create({
+    "name": "Test User",
+    "login": "test_user",
+    "email": "test@example.com",
+})
+```
+
+**Related:** Other demo XML IDs like `base.res_partner_1`, `base.res_partner_12`, `product.product_product_7` are also not available. See [Section 22](#22-demo-data-not-installed-in-tests).
+
+---
+
+## 29. hr.expense.sheet Removed
+
+In Odoo 19, the `hr.expense.sheet` model has been **completely removed**. Expense workflows now use `hr.expense` directly.
+
+### Impact
+
+- Any module inheriting `hr.expense.sheet` will fail at model registration
+- Views, actions, and security rules referencing `hr.expense.sheet` will break
+- Tests creating expense sheets need a complete rewrite
+
+### How to fix
+
+Rewrite all `hr.expense.sheet` logic to work with `hr.expense` directly:
+
+```python
+# 18.0
+class HrExpenseSheet(models.Model):
+    _inherit = "hr.expense.sheet"
+    custom_field = fields.Char()
+
+# 19.0
+class HrExpense(models.Model):
+    _inherit = "hr.expense"
+    custom_field = fields.Char()
+```
+
+Security rules, views, and menu items must also be updated to reference `hr.expense` instead of `hr.expense.sheet`.
+
+---
+
+## 30. department_id Moved to hr.employee
+
+In Odoo 19, `department_id` has been **removed from `res.users`**. It now lives exclusively on `hr.employee`.
+
+### Also: `hr.employee.base` removed
+
+The abstract model `hr.employee.base` no longer exists. Modules inheriting it must use `hr.employee` instead.
+
+```python
+# 18.0
+class HrEmployeeBase(models.AbstractModel):
+    _inherit = "hr.employee.base"
+
+user.department_id  # direct access on res.users
+
+# 19.0
+class HrEmployee(models.Model):
+    _inherit = "hr.employee"
+
+user.employee_id.department_id  # access via employee
+```
+
+### Test implications
+
+Tests that assign `department_id` on users must first create an employee record:
+
+```python
+# 18.0
+user.department_id = department
+
+# 19.0
+employee = self.env["hr.employee"].create({
+    "name": user.name,
+    "user_id": user.id,
+    "department_id": department.id,
+})
+```
+
+---
+
+## 31. OCA Unreleased Dependencies in CI
+
+When migrating module A that depends on module B, but module B's 19.0 version isn't published on PyPI yet, OCA CI will fail with:
+
+```
+ERROR: Could not find a version that satisfies the requirement odoo-addon-module_b==19.0.*
+```
+
+### How to fix
+
+1. **Include the dependency module's source code** in your PR branch (copy from the other repo's migration PR branch)
+2. **Add `.codecov.yml`** to exclude vendored modules from coverage analysis:
+
+```yaml
+# .codecov.yml
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+    patch:
+      default:
+        target: auto
+ignore:
+  - "vendored_module_a/**"
+  - "vendored_module_b/**"
+```
+
+3. **Fix `__manifest__.py` website URL** in vendored modules — OCA pre-commit checks that `website` matches the current repo URL:
+
+```python
+# If vendoring from partner-contact into l10n-thailand:
+"website": "https://github.com/OCA/l10n-thailand",  # must match target repo
+```
+
+**Tip:** Once the dependency module's PR is merged and published, remove the vendored copy and the `.codecov.yml` ignore entry.
 
 ---
 

@@ -58,6 +58,17 @@ Copy this checklist into your PR description or use it as a reference.
 ### Timezone
 - [ ] `self.env.context.get("tz")` / pytz → `self.env.tz`
 
+### Partner Title
+- [ ] `res.partner.title` removed from base → add `partner_title` dependency, use `title_id`
+
+### safe_eval()
+- [ ] `safe_eval(expr, globals_dict={...})` → `safe_eval(expr, context={...})`
+
+### HR Module Changes
+- [ ] `hr.expense.sheet` removed → use `hr.expense` directly
+- [ ] `hr.employee.base` removed → inherit `hr.employee` instead
+- [ ] `res.users.department_id` removed → access via `user.employee_id.department_id`
+
 ### Test Changes
 - [ ] Company names must be unique (not "My Company")
 - [ ] Handle psycopg2 → psycopg3 imports
@@ -66,8 +77,13 @@ Copy this checklist into your PR description or use it as a reference.
 - [ ] Stored compute side effects: call `invalidate_recordset()` + compute explicitly
 - [ ] `FakeModelLoader` (odoo-test-helper) → native `add_to_registry`
 - [ ] Tests must not rely on demo data — create test data explicitly
+- [ ] `base.user_demo` XML ID removed — create test users explicitly
 - [ ] Search functions on computed fields: handle `"in"` operator (optimizer rewrites `"="` to `"in"`)
 - [ ] Consider `tracking_disable=True` in test context for performance
+
+### CI / Dependencies
+- [ ] Unreleased OCA dependencies: vendor module source + `.codecov.yml` ignore
+- [ ] Vendored module `website` in `__manifest__.py` must match target repo URL
 
 ## Post-migration
 

@@ -50,6 +50,10 @@ Run ALL checks from the `validation` section of `migration-rules.yaml`:
 - `ormcache_context` (should be `@ormcache`)
 - `from odoo import SUPERUSER_ID` (should be `from odoo.api import`)
 - `FakeModelLoader` (should use native `add_to_registry`)
+- `globals_dict=` in safe_eval calls (should be `context=`)
+- `env.ref("base.user_demo")` (XML ID removed — create test users explicitly)
+- `hr.expense.sheet` (model removed — use `hr.expense` directly)
+- `hr.employee.base` (model removed — use `hr.employee`)
 
 **Needs manual review:**
 - `_search_` methods that check `operator == "="` must also handle `"in"` (optimizer rewrites `=` to `in` before search runs)
@@ -79,7 +83,7 @@ Use the OCA commit convention:
 
 ## File References
 
-- `README.md` — full migration guide with explanations and code examples (25 sections)
+- `README.md` — full migration guide with explanations and code examples (31 sections)
 - `CHECKLIST.md` — copy-paste checklist for PR descriptions
 - `migration-rules.yaml` — machine-readable detection and fix patterns
 
