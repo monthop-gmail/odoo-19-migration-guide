@@ -66,6 +66,7 @@ Copy this checklist into your PR description or use it as a reference.
 - [ ] Stored compute side effects: call `invalidate_recordset()` + compute explicitly
 - [ ] `FakeModelLoader` (odoo-test-helper) → native `add_to_registry`
 - [ ] Tests must not rely on demo data — create test data explicitly
+- [ ] Search functions on computed fields: handle `"in"` operator (optimizer rewrites `"="` to `"in"`)
 - [ ] Consider `tracking_disable=True` in test context for performance
 
 ## Post-migration

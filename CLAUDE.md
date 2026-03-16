@@ -51,6 +51,9 @@ Run ALL checks from the `validation` section of `migration-rules.yaml`:
 - `from odoo import SUPERUSER_ID` (should be `from odoo.api import`)
 - `FakeModelLoader` (should use native `add_to_registry`)
 
+**Needs manual review:**
+- `_search_` methods that check `operator == "="` must also handle `"in"` (optimizer rewrites `=` to `in` before search runs)
+
 **Must exist:**
 - Version `19.0.x.x.x` in `__manifest__.py`
 
@@ -68,7 +71,7 @@ Use the OCA commit convention:
 
 - NEVER squash historical commits when preparing OCA PRs
 - When unsure if a match is a false positive (e.g. `.users` on a non-groups model), ASK the user
-- `button_draft`, stored compute side effects, `_sql_constraints`, and Domain API changes require manual review — do not auto-fix
+- `button_draft`, stored compute side effects, `_sql_constraints`, Domain API changes, and `_search_` methods require manual review — do not auto-fix
 - `auto_join`: check field type first — One2many removes it, Many2one/Many2many renames to `bypass_search_access`
 - Test files need extra attention: company names must be unique, psycopg imports must handle both v2/v3, demo data is not available
 - `self.env.ref()` in tests may break if it references demo data — create test data explicitly instead
@@ -76,7 +79,7 @@ Use the OCA commit convention:
 
 ## File References
 
-- `README.md` — full migration guide with explanations and code examples (24 sections)
+- `README.md` — full migration guide with explanations and code examples (25 sections)
 - `CHECKLIST.md` — copy-paste checklist for PR descriptions
 - `migration-rules.yaml` — machine-readable detection and fix patterns
 

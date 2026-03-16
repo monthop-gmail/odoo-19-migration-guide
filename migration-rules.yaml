@@ -426,6 +426,32 @@ rules:
       - "env.ref is also used for non-demo XML IDs (views, groups, etc.) — those are fine"
 
   # ──────────────────────────────────────────────
+  # SEARCH FUNCTION CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: search-function-operator-rewriting
+    title: "Search functions must handle 'in' operator (optimizer rewrites '=' to 'in')"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'def _search_\w+\(self, operator, value\)'
+        context: "Check if the search function only handles '=' but not 'in' operator"
+      - pattern: 'operator\s*==\s*["\x27]=["\x27]'
+        context: "Inside a _search_ method — may need to also check for 'in' operator"
+    fix:
+      note: |
+        In Odoo 19, the domain optimizer rewrites ("field", "=", val) to ("field", "in", [val])
+        BEFORE the search function is called. Search functions must handle both:
+            if (operator == "=" and value is False) or (operator == "in" and value == [False]):
+                value = False  # normalize back
+                ...
+        Also normalize value when the optimizer wraps it in a list.
+    auto_fix: false
+    false_positives:
+      - "operator == '=' checks outside of _search_ methods are not affected"
+      - "Only relevant for computed non-stored fields with a search parameter"
+
+  # ──────────────────────────────────────────────
   # CLEANUP
   # ──────────────────────────────────────────────
 
