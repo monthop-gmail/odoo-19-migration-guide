@@ -41,6 +41,7 @@ rules:
     title: "res.users: groups_id → group_ids"
     severity: error
     file_types: ["*.py", "*.xml", "*.csv"]
+    affected_models: ["res.users", "ir.ui.view", "ir.ui.menu", "ir.actions", "ir.actions.report", "website.page.properties"]
     detect:
       - pattern: 'groups_id'
     fix:
@@ -48,8 +49,9 @@ rules:
       replace: "group_ids"
     auto_fix: true
     false_positives:
-      - "Very unlikely — groups_id is specific to res.users"
+      - "Very unlikely — groups_id is specific to res.users and related models"
     error_message: "AttributeError: 'res.users' object has no attribute 'groups_id'"
+    reference: "https://github.com/odoo/odoo/pull/179354"
 
   # ──────────────────────────────────────────────
   # API CHANGES
@@ -86,37 +88,43 @@ rules:
     false_positives: []
     error_message: "DeprecationWarning or AttributeError on read_group"
 
-  - id: api-context-deprecated
-    title: "rec._context → rec.env.context"
+  - id: api-internal-attrs-deprecated
+    title: "Internal attributes _context/_cr/_uid → env.*"
     severity: warning
     file_types: ["*.py"]
     detect:
       - pattern: '\._context\b'
+      - pattern: 'self\._cr\b'
+      - pattern: 'self\._uid\b'
     fix:
-      search: "._context"
-      replace: ".env.context"
+      note: |
+        ._context → .env.context
+        self._cr → self.env.cr
+        self._uid → self.env.uid
     auto_fix: true
     false_positives:
-      - "Unlikely — _context is Odoo-specific"
-    error_message: "DeprecationWarning: use .env.context instead of ._context"
+      - "Unlikely — these are Odoo-specific internal attributes"
+    error_message: "DeprecationWarning: use .env.context/.env.cr/.env.uid instead"
 
   # ──────────────────────────────────────────────
   # FIELD DEFINITION CHANGES
   # ──────────────────────────────────────────────
 
   - id: field-auto-join
-    title: "One2many auto_join=True removed"
+    title: "auto_join removed (One2many) or renamed (Many2one/Many2many)"
     severity: error
     file_types: ["*.py"]
     detect:
       - pattern: 'auto_join\s*=\s*True'
     fix:
-      search: "auto_join=True"
-      replace: ""
-      note: "Remove the parameter entirely. Clean up trailing comma if needed."
-    auto_fix: true
+      note: |
+        - One2many: remove auto_join entirely
+        - Many2one/Many2many: rename auto_join=True to bypass_search_access=True
+        Check the field type before applying the fix.
+    auto_fix: false
     false_positives: []
     error_message: "TypeError: __init__() got an unexpected keyword argument 'auto_join'"
+    reference: "https://github.com/odoo/odoo/pull/219627"
 
   # ──────────────────────────────────────────────
   # METHOD CHANGES (manual review required)
@@ -229,8 +237,29 @@ rules:
     error_message: "pre-commit ruff W8301"
 
   # ──────────────────────────────────────────────
-  # DOMAIN CHANGES
+  # DOMAIN & EXPRESSION CHANGES
   # ──────────────────────────────────────────────
+
+  - id: domain-expression-api
+    title: "odoo.osv.expression → odoo.fields.Domain"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'from odoo\.osv import expression'
+      - pattern: 'from odoo\.osv\.expression import'
+      - pattern: 'expression\.AND\('
+      - pattern: 'expression\.OR\('
+      - pattern: 'expression\.normalize_domain\('
+    fix:
+      note: |
+        Replace:
+          from odoo.osv import expression → from odoo.fields import Domain (or from odoo import Domain)
+          expression.AND([d1, d2]) → Domain(d1) & Domain(d2)
+          expression.OR([d1, d2]) → Domain(d1) | Domain(d2)
+    auto_fix: false
+    false_positives: []
+    error_message: "ImportError or DeprecationWarning on odoo.osv.expression"
+    reference: "https://github.com/odoo/odoo/pull/217708"
 
   - id: domain-empty-list
     title: "Domain with empty list handling"
@@ -250,6 +279,167 @@ rules:
     auto_fix: false
     false_positives:
       - "Only problematic if the list can actually be empty at runtime"
+
+  # ──────────────────────────────────────────────
+  # MODEL DEFINITION CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: model-sql-constraints
+    title: "_sql_constraints → models.Constraint / models.Index"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: '_sql_constraints\s*='
+    fix:
+      note: |
+        Replace _sql_constraints list with _constraints list using models.Constraint:
+          _sql_constraints = [("name_uniq", "unique(name)", "Msg")]
+        becomes:
+          _constraints = [models.Constraint("unique(name)", "Msg")]
+    auto_fix: false
+    false_positives: []
+    reference: "https://github.com/odoo/odoo/pull/175783"
+
+  # ──────────────────────────────────────────────
+  # CONTROLLER CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: controller-route-json
+    title: 'Route type="json" → type="jsonrpc"'
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'type\s*=\s*["\x27]json["\x27]'
+        context: "In @route decorators"
+    fix:
+      search: 'type="json"'
+      replace: 'type="jsonrpc"'
+    auto_fix: true
+    false_positives:
+      - "Make sure it's in a @route decorator, not a generic string"
+    error_message: "ValueError: Unknown route type 'json'"
+    reference: "https://github.com/odoo/odoo/pull/183636"
+
+  # ──────────────────────────────────────────────
+  # METHOD / DECORATOR CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: method-toggle-active
+    title: "toggle_active → action_archive / action_unarchive"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'toggle_active'
+    fix:
+      note: |
+        Replace toggle_active() calls with action_archive() or action_unarchive().
+        If overriding toggle_active, move logic to action_archive/action_unarchive.
+    auto_fix: false
+    false_positives:
+      - "Check if it's an override (def toggle_active) or a call (.toggle_active())"
+    reference: "https://github.com/odoo/odoo/pull/183691"
+
+  - id: decorator-ormcache-context
+    title: "@ormcache_context → @ormcache"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'ormcache_context'
+    fix:
+      note: |
+        Replace @ormcache_context(keys=("lang",)) with:
+          @ormcache("self.env.context.get('lang')")
+        Also update imports: remove ormcache_context, ensure ormcache is imported.
+    auto_fix: false
+    false_positives: []
+    reference: "https://github.com/odoo/odoo/pull/220725"
+
+  - id: import-superuser-id
+    title: "SUPERUSER_ID import moved to odoo.api"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'from odoo import.*SUPERUSER_ID'
+    fix:
+      search: "from odoo import SUPERUSER_ID"
+      replace: "from odoo.api import SUPERUSER_ID"
+      note: "If importing multiple names (from odoo import api, SUPERUSER_ID), split them."
+    auto_fix: false
+    false_positives: []
+    reference: "https://github.com/odoo/odoo/commit/d6a955f10483"
+
+  # ──────────────────────────────────────────────
+  # TIMEZONE
+  # ──────────────────────────────────────────────
+
+  - id: timezone-env-tz
+    title: "context.get('tz') / pytz → self.env.tz"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: "context\\.get\\(['\"]tz['\"]\\)"
+      - pattern: 'pytz\.timezone'
+    fix:
+      note: |
+        Replace manual timezone resolution with self.env.tz:
+          pytz.timezone(self.env.context.get("tz") or "UTC") → self.env.tz
+    auto_fix: false
+    false_positives:
+      - "pytz may be used for non-user timezone purposes"
+    reference: "https://github.com/odoo/odoo/pull/221541"
+
+  # ──────────────────────────────────────────────
+  # TEST CHANGES (additional)
+  # ──────────────────────────────────────────────
+
+  - id: test-fake-model-loader
+    title: "FakeModelLoader → native add_to_registry"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'FakeModelLoader'
+      - pattern: 'odoo_test_helper'
+    fix:
+      note: |
+        Replace odoo-test-helper FakeModelLoader with native:
+          from odoo.orm.model_classes import add_to_registry
+          add_to_registry(cls.registry, FakeModel)
+          cls.registry._setup_models_(cls.env.cr, ["fake.model"])
+          cls.registry.init_models(cls.env.cr, ["fake.model"], {"models_to_check": True})
+          cls.addClassCleanup(cls.registry.__delitem__, "fake.model")
+    auto_fix: false
+    false_positives: []
+
+  - id: test-demo-data
+    title: "Demo data not installed by default in tests"
+    severity: warning
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'self\.env\.ref\('
+        context: "Check if referencing demo data (base.res_partner_, base.res_company_, etc.)"
+    fix:
+      note: |
+        In Odoo 19, demo data is not installed by default in tests.
+        Replace self.env.ref("base.res_partner_1") with explicit create().
+    auto_fix: false
+    false_positives:
+      - "env.ref is also used for non-demo XML IDs (views, groups, etc.) — those are fine"
+
+  # ──────────────────────────────────────────────
+  # CLEANUP
+  # ──────────────────────────────────────────────
+
+  - id: cleanup-migrations-folder
+    title: "Delete old migrations/ folder"
+    severity: info
+    file_types: []
+    detect:
+      - pattern: "migrations/"
+        context: "Check if a migrations/ directory exists in the module"
+    fix:
+      note: "Delete the entire migrations/ folder — historical upgrade scripts should not be carried forward."
+    auto_fix: false
+    false_positives: []
 
 # ──────────────────────────────────────────────
 # VERSION BUMP (always apply)
@@ -278,12 +468,25 @@ validation:
       exception: "custom field named groups_id (not res.users)"
     - pattern: 'models\.NewId'
     - pattern: 'auto_join\s*=\s*True'
-      scope: "One2many fields only"
     - pattern: '\._context\b'
+    - pattern: 'self\._cr\b'
+    - pattern: 'self\._uid\b'
     - pattern: '\.read_group\s*\('
       exception: "._read_group( is OK"
+    - pattern: 'from odoo\.osv import expression'
+    - pattern: '_sql_constraints\s*='
+    - pattern: 'type\s*=\s*"json"'
+      scope: "@route decorators only"
+    - pattern: 'toggle_active'
+    - pattern: 'ormcache_context'
+    - pattern: 'from odoo import.*SUPERUSER_ID'
+    - pattern: 'FakeModelLoader'
 
   must_exist:
     - pattern: "version.*19\\.0"
       file: "__manifest__.py"
       message: "Version must be updated to 19.0.x.x.x"
+
+  directories_must_not_exist:
+    - path: "migrations/"
+      message: "Delete old migrations/ folder"

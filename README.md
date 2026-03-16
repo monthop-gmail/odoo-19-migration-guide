@@ -14,7 +14,7 @@ Covers breaking changes, deprecated APIs, and migration patterns with real code 
 3. [read_group Deprecated](#3-read_group-deprecated)
 4. [One2many auto_join Removed](#4-one2many-auto_join-removed)
 5. [button_draft() Changed](#5-button_draft-changed)
-6. [rec._context Deprecated](#6-rec_context-deprecated)
+6. [Internal Attributes Deprecated](#6-internal-attributes-deprecated)
 7. [Stored Compute Side Effects](#7-stored-compute-side-effects)
 8. [CABA (Cash Basis) Behavior](#8-caba-cash-basis-behavior-on-draft)
 9. [Domain Empty List Handling](#9-domain-empty-list-handling)
@@ -22,7 +22,17 @@ Covers breaking changes, deprecated APIs, and migration patterns with real code 
 11. [Test Model Registration](#11-test-model-registration)
 12. [psycopg2 vs psycopg3](#12-psycopg2-vs-psycopg3)
 13. [Lazy Translation Formatting](#13-lazy-translation-formatting)
-14. [OCA Migration PR Guidelines](#14-oca-migration-pr-guidelines)
+14. [Domain Expression API](#14-domain-expression-api)
+15. [SQL Constraints Refactored](#15-sql-constraints-refactored)
+16. [Timezone Access](#16-timezone-access)
+17. [Route type="json" → type="jsonrpc"](#17-route-typejson--typejsonrpc)
+18. [toggle_active → action_archive/action_unarchive](#18-toggle_active--action_archiveaction_unarchive)
+19. [@api.private Decorator](#19-apiprivate-decorator)
+20. [SUPERUSER_ID Import Changed](#20-superuser_id-import-changed)
+21. [@ormcache_context Removed](#21-ormcache_context-removed)
+22. [Demo Data Not Installed in Tests](#22-demo-data-not-installed-in-tests)
+23. [Delete Old migrations Folder](#23-delete-old-migrations-folder)
+24. [OCA Migration PR Guidelines](#24-oca-migration-pr-guidelines)
 
 ---
 
@@ -116,21 +126,29 @@ for move, account, debit_sum, credit_sum in results:
 
 ## 4. One2many auto_join Removed
 
-`auto_join=True` is no longer supported for `One2many` fields. Simply remove it.
+`auto_join=True` is no longer supported for `One2many` fields. For `Many2one`/`Many2many`, it has been renamed to `bypass_search_access`.
+
+Ref: [odoo/odoo#219627](https://github.com/odoo/odoo/pull/219627)
 
 ```python
-# 18.0
+# 18.0 — One2many
 review_ids = fields.One2many(
     comodel_name="tier.review",
     inverse_name="res_id",
     auto_join=True,
 )
 
-# 19.0
+# 19.0 — One2many: just remove it
 review_ids = fields.One2many(
     comodel_name="tier.review",
     inverse_name="res_id",
 )
+
+# 18.0 — Many2one
+partner_id = fields.Many2one("res.partner", auto_join=True)
+
+# 19.0 — Many2one: rename to bypass_search_access
+partner_id = fields.Many2one("res.partner", bypass_search_access=True)
 ```
 
 **Error message:** `TypeError: __init__() got an unexpected keyword argument 'auto_join'`
@@ -157,21 +175,23 @@ def button_draft(self):
 
 ---
 
-## 6. rec._context Deprecated
+## 6. Internal Attributes Deprecated
 
-`rec._context` triggers a `DeprecationWarning` in Odoo 19.
+Direct access to `_context`, `_cr`, and `_uid` triggers `DeprecationWarning` in Odoo 19. Use `self.env.*` instead.
 
 ```python
 # 18.0
 value = rec._context.get("key")
-timezone = self._context.get("tz")
+self._cr.execute("SELECT 1")
+uid = self._uid
 
 # 19.0
 value = rec.env.context.get("key")
-timezone = self.env.context.get("tz")
+self.env.cr.execute("SELECT 1")
+uid = self.env.uid
 ```
 
-**Search tip:** `grep -rn "\._context" --include="*.py"` in your module.
+**Search tip:** `grep -rn "\._context\|self\._cr\|self\._uid" --include="*.py"` in your module.
 
 ---
 
@@ -266,18 +286,36 @@ self.env["res.company"].create({"name": "Test Company For Tier Validation"})
 
 ## 11. Test Model Registration
 
-In Odoo 19, test models should use the `add_to_registry` pattern instead of the older `_setup_models__` (double underscore) pattern.
+In Odoo 19, test models use the native `add_to_registry` pattern. The `odoo-test-helper` library with `FakeModelLoader` is no longer needed.
 
 ```python
-# 19.0
-from odoo.tests.common import tagged
+# 18.0 — using odoo-test-helper
+from odoo_test_helper import FakeModelLoader
 
-@tagged("post_install", "-at_install")
-class TestMyModule(TransactionCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        # Models are registered via add_to_registry in __init__.py
+@classmethod
+def setUpClass(cls):
+    cls.loader = FakeModelLoader(cls.env, cls.__module__)
+    cls.loader.backup_registry()
+    from .fake_models import FakeModel
+    cls.loader.update_registry((FakeModel,))
+
+@classmethod
+def tearDownClass(cls):
+    cls.loader.restore_registry()
+
+# 19.0 — native add_to_registry
+from odoo.orm.model_classes import add_to_registry
+
+@classmethod
+def setUpClass(cls):
+    super().setUpClass()
+    from .fake_models import FakeModel
+    add_to_registry(cls.registry, FakeModel)
+    cls.registry._setup_models_(cls.env.cr, ["fake.model"])
+    cls.registry.init_models(
+        cls.env.cr, ["fake.model"], {"models_to_check": True}
+    )
+    cls.addClassCleanup(cls.registry.__delitem__, "fake.model")
 ```
 
 ---
@@ -313,7 +351,213 @@ _("Message %(name)s", name=variable)
 
 ---
 
-## 14. OCA Migration PR Guidelines
+## 14. Domain Expression API
+
+`odoo.osv.expression` is replaced by the new `odoo.fields.Domain` / `odoo.Domain` API.
+
+Ref: [odoo/odoo#217708](https://github.com/odoo/odoo/pull/217708), [odoo/odoo#170009](https://github.com/odoo/odoo/pull/170009)
+
+```python
+# 18.0
+from odoo.osv import expression
+domain = expression.AND([domain1, domain2])
+domain = expression.OR([domain1, domain2])
+
+# 19.0
+from odoo.fields import Domain
+# or: from odoo import Domain
+domain = Domain(domain1) & Domain(domain2)  # AND
+domain = Domain(domain1) | Domain(domain2)  # OR
+```
+
+Also, computed non-stored field `search` methods must now return a `Domain` object:
+
+```python
+# 18.0
+def _search_my_field(self, operator, value):
+    return [("other_field", operator, value)]
+
+# 19.0
+def _search_my_field(self, operator, value):
+    return Domain([("other_field", operator, value)])
+```
+
+Ref: [odoo/odoo@4f0d467](https://github.com/odoo/odoo/commit/4f0d4670edea0e989fc939e3b2e75cefd351cfc3)
+
+---
+
+## 15. SQL Constraints Refactored
+
+`_sql_constraints` class variable is replaced by `models.Constraint` and `models.Index`.
+
+Ref: [odoo/odoo#175783](https://github.com/odoo/odoo/pull/175783)
+
+```python
+# 18.0
+class MyModel(models.Model):
+    _name = "my.model"
+    _sql_constraints = [
+        ("name_uniq", "unique(name)", "Name must be unique!"),
+    ]
+
+# 19.0
+class MyModel(models.Model):
+    _name = "my.model"
+    _constraints = [
+        models.Constraint(
+            "unique(name)",
+            "Name must be unique!",
+        ),
+    ]
+```
+
+---
+
+## 16. Timezone Access
+
+Direct pytz manipulation and `context.get("tz")` is replaced by `self.env.tz`.
+
+Ref: [odoo/odoo#221541](https://github.com/odoo/odoo/pull/221541)
+
+```python
+# 18.0
+import pytz
+tz = pytz.timezone(self.env.context.get("tz") or "UTC")
+
+# 19.0
+tz = self.env.tz  # returns a timezone object directly
+```
+
+---
+
+## 17. Route type="json" → type="jsonrpc"
+
+In controller `@route` decorators, `type="json"` is renamed to `type="jsonrpc"`.
+
+Ref: [odoo/odoo#183636](https://github.com/odoo/odoo/pull/183636)
+
+```python
+# 18.0
+@http.route("/my/endpoint", type="json", auth="user")
+def my_endpoint(self, **kwargs):
+    ...
+
+# 19.0
+@http.route("/my/endpoint", type="jsonrpc", auth="user")
+def my_endpoint(self, **kwargs):
+    ...
+```
+
+---
+
+## 18. toggle_active → action_archive/action_unarchive
+
+`toggle_active()` is replaced by explicit `action_archive()` and `action_unarchive()`.
+
+Ref: [odoo/odoo#183691](https://github.com/odoo/odoo/pull/183691)
+
+```python
+# 18.0
+record.toggle_active()
+
+# 19.0
+record.action_archive()    # set active=False
+record.action_unarchive()  # set active=True
+```
+
+If you override `toggle_active`, move the logic to `action_archive`/`action_unarchive` as appropriate.
+
+---
+
+## 19. @api.private Decorator
+
+New `@api.private` decorator marks methods as inaccessible from external APIs (XML-RPC, JSON-RPC).
+
+Ref: [odoo/odoo#195402](https://github.com/odoo/odoo/pull/195402)
+
+```python
+# 19.0 — mark internal methods
+from odoo import api
+
+@api.private
+def _internal_method(self):
+    ...
+```
+
+This is informational — existing code won't break, but consider adding it to internal methods for security.
+
+---
+
+## 20. SUPERUSER_ID Import Changed
+
+`SUPERUSER_ID` import location changed.
+
+Ref: [odoo/odoo@d6a955f](https://github.com/odoo/odoo/commit/d6a955f10483)
+
+```python
+# 18.0
+from odoo import SUPERUSER_ID
+
+# 19.0
+from odoo.api import SUPERUSER_ID
+```
+
+---
+
+## 21. @ormcache_context Removed
+
+`@ormcache_context` decorator is removed. Use `@ormcache` with explicit context key access.
+
+Ref: [odoo/odoo#220725](https://github.com/odoo/odoo/pull/220725)
+
+```python
+# 18.0
+from odoo.tools import ormcache_context
+
+@ormcache_context(keys=("lang",))
+def _get_name(self):
+    ...
+
+# 19.0
+from odoo.tools import ormcache
+
+@ormcache("self.env.context.get('lang')")
+def _get_name(self):
+    ...
+```
+
+---
+
+## 22. Demo Data Not Installed in Tests
+
+In Odoo 19, demo data is **no longer installed by default** in tests. Tests must create their own data explicitly.
+
+```python
+# 18.0 — could rely on demo data
+partner = self.env.ref("base.res_partner_1")
+
+# 19.0 — create test data explicitly
+partner = self.env["res.partner"].create({"name": "Test Partner"})
+```
+
+Also consider setting `tracking_disable` in test setUp for performance:
+
+```python
+@classmethod
+def setUpClass(cls):
+    super().setUpClass()
+    cls.env = cls.env(context=dict(cls.env.context, tracking_disable=True))
+```
+
+---
+
+## 23. Delete Old migrations Folder
+
+When migrating, delete the entire `migrations/` folder from the module if it exists. These are historical scripts from previous version upgrades and should not be carried forward.
+
+---
+
+## 24. OCA Migration PR Guidelines
 
 When submitting migration PRs to OCA repositories:
 
@@ -357,16 +601,26 @@ Use this checklist when migrating a module:
 
 - [ ] Version bump in `__manifest__.py`
 - [ ] Update README.rst and index.html URLs
+- [ ] Delete `migrations/` folder if exists
 - [ ] Search for `groups_id` → `group_ids`
 - [ ] Search for `.users` on groups → `.user_ids`
 - [ ] Search for `models.NewId` → `not isinstance(id, int)`
 - [ ] Search for `read_group` → `_read_group` with aggregates
-- [ ] Search for `auto_join` on One2many → remove
+- [ ] Search for `auto_join` → remove (One2many) or rename to `bypass_search_access` (Many2one/Many2many)
 - [ ] Search for `button_draft` override → add `remove_move_reconcile()` if needed
-- [ ] Search for `._context` → `.env.context`
+- [ ] Search for `._context` / `._cr` / `._uid` → `.env.context` / `.env.cr` / `.env.uid`
+- [ ] Search for `odoo.osv.expression` → `odoo.fields.Domain`
+- [ ] Search for `_sql_constraints` → `models.Constraint`
+- [ ] Search for timezone via `context.get("tz")` → `self.env.tz`
+- [ ] Search for `type="json"` in routes → `type="jsonrpc"`
+- [ ] Search for `toggle_active` → `action_archive` / `action_unarchive`
+- [ ] Search for `from odoo import SUPERUSER_ID` → `from odoo.api import SUPERUSER_ID`
+- [ ] Search for `@ormcache_context` → `@ormcache`
 - [ ] Check stored compute methods for side effects
 - [ ] Check test company names for uniqueness
 - [ ] Check psycopg2 imports
+- [ ] Check `FakeModelLoader` → native `add_to_registry`
+- [ ] Check tests don't rely on demo data
 - [ ] Run pre-commit for translation formatting
 
 ---
