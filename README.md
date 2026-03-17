@@ -40,6 +40,15 @@ Covers breaking changes, deprecated APIs, and migration patterns with real code 
 29. [hr.expense.sheet Removed](#29-hrexpensesheet-removed)
 30. [department_id Moved to hr.employee](#30-department_id-moved-to-hremployee)
 31. [OCA Unreleased Dependencies in CI](#31-oca-unreleased-dependencies-in-ci)
+32. [create(self, vals) → create(self, vals_list)](#32-createself-vals--createself-vals_list)
+33. [res.groups: category_id → privilege_id via res.groups.privilege](#33-resgroups-category_id--privilege_id-via-resgroupsprivilege)
+34. [ir.actions.act_window: target='inline' → target='main'](#34-iractionsact_window-targetinline--targetmain)
+35. [Search View Group Attributes Removed](#35-search-view-group-attributes-removed)
+36. [ir.default.set Broken for TransientModel Fields](#36-irdefaultset-broken-for-transientmodel-fields)
+37. [Field Removals in Core Models](#37-field-removals-in-core-models)
+38. [XML ID Changes](#38-xml-id-changes)
+39. [Website Template XPath Changes](#39-website-template-xpath-changes)
+40. [_constraints List Format → Named Class Attributes](#40-_constraints-list-format--named-class-attributes)
 
 ---
 
@@ -685,6 +694,15 @@ Use this checklist when migrating a module:
 - [ ] `hr.expense.sheet` removed — use `hr.expense` directly
 - [ ] `department_id` moved from `res.users` to `hr.employee`
 - [ ] OCA unreleased dependencies — vendor modules + `.codecov.yml` ignore
+- [ ] `create(self, vals)` → `create(self, vals_list)` — handle list of vals dicts
+- [ ] `res.groups.category_id` removed → use `privilege_id` via `res.groups.privilege`
+- [ ] `target='inline'` in `ir.actions.act_window` → `target='main'`
+- [ ] Search view `<group>` elements: remove `string` and `expand` attributes
+- [ ] `ir.default.set` on TransientModel fields → use `ir.config_parameter` instead
+- [ ] Core field removals: `stock.move.name` → `reference`, `sale.order.line.product_uom` → `product_uom_id`, etc.
+- [ ] XML ID changes: `product.product_category_all` → `product.product_category_goods`, `product.group_discount_per_so_line` → `sale.group_discount_per_so_line`
+- [ ] Website template XPath changes: `o_product_terms_and_share` → `product_full_description`, `product_name` → `td_product_name`
+- [ ] `_constraints` list-of-tuples format → named class attributes with `models.Constraint`
 
 ---
 
@@ -892,6 +910,159 @@ ignore:
 ```
 
 **Tip:** Once the dependency module's PR is merged and published, remove the vendored copy and the `.codecov.yml` ignore entry.
+
+---
+
+## 32. create(self, vals) → create(self, vals_list)
+
+In Odoo 19, `create()` always receives a **list** of vals dicts (multi-create API). Modules overriding `create(self, vals)` that call `vals.get()` directly will crash with `AttributeError: 'list' object has no attribute 'get'`.
+
+```python
+# 18.0
+@api.model
+def create(self, vals):
+    if vals.get('url_handler'):
+        # validate url_handler
+    return super().create(vals)
+
+# 19.0
+@api.model
+def create(self, vals_list):
+    if not isinstance(vals_list, list):
+        vals_list = [vals_list]
+    for vals in vals_list:
+        if vals.get('url_handler'):
+            # validate url_handler
+    return super().create(vals_list)
+```
+
+**Error:** `AttributeError: 'list' object has no attribute 'get'`
+
+---
+
+## 33. res.groups: category_id → privilege_id via res.groups.privilege
+
+In Odoo 19, `res.groups` no longer has a direct `category_id` field. Instead, it uses `privilege_id` pointing to `res.groups.privilege`, which then has a `category_id` pointing to `ir.module.category`.
+
+```xml
+<!-- 18.0 -->
+<record id="marketplace_category" model="ir.module.category">
+    <field name="name">Marketplace</field>
+</record>
+<record id="my_group" model="res.groups">
+    <field name="category_id" ref="marketplace_category"/>
+</record>
+
+<!-- 19.0 -->
+<record id="marketplace_privilege" model="res.groups.privilege">
+    <field name="name">Marketplace</field>
+    <field name="category_id" ref="marketplace_category"/>
+</record>
+<record id="my_group" model="res.groups">
+    <field name="privilege_id" ref="marketplace_privilege"/>
+</record>
+```
+
+**Error:** `ValueError: Invalid field 'category_id' in 'res.groups'`
+
+---
+
+## 34. ir.actions.act_window: target='inline' → target='main'
+
+`target='inline'` is no longer a valid value for `ir.actions.act_window`. Use `target='main'` instead.
+
+```xml
+<!-- 18.0 -->
+<field name="target">inline</field>
+
+<!-- 19.0 -->
+<field name="target">main</field>
+```
+
+---
+
+## 35. Search View Group Attributes Removed
+
+In search views, `<group>` elements no longer support `string` or `expand` attributes.
+
+```xml
+<!-- 18.0 -->
+<group expand="0" string="Group By">
+    <filter .../>
+</group>
+
+<!-- 19.0 -->
+<group>
+    <filter .../>
+</group>
+```
+
+---
+
+## 36. ir.default.set Broken for TransientModel Fields
+
+`ir.default.set` via XML function calls no longer works for fields on TransientModel (e.g. `res.config.settings`) because the `field_id` lookup returns null. Use Python defaults or `ir.config_parameter` instead.
+
+---
+
+## 37. Field Removals in Core Models
+
+Many fields were removed or renamed in Odoo 19 core models (Webkul/Marketplace-relevant):
+
+| Model | Removed/Changed | Replacement |
+|-------|----------------|-------------|
+| `res.partner` | `mobile` | removed |
+| `res.partner` | `title` | removed from base (see [Section 26](#26-respartnertitle-removed-from-base)) |
+| `stock.picking` | `date` | use `scheduled_date` |
+| `stock.picking` | `group_id` | removed |
+| `stock.move` | `name` | `reference` |
+| `stock.move` | `product_uom_category_id` | removed |
+| `sale.order.line` | `product_uom` | `product_uom_id` |
+| `sale.order.line` | `product_uom_category_id` | removed |
+| `sale.order` | `procurement_group_id` | removed |
+| `product.template` | `uom_po_id` | removed |
+| `product.template` | `_get_default_category_id()` | removed |
+
+---
+
+## 38. XML ID Changes
+
+| Old XML ID | New XML ID |
+|-----------|-----------|
+| `product.product_category_all` | `product.product_category_goods` |
+| `product.group_discount_per_so_line` | `sale.group_discount_per_so_line` |
+
+---
+
+## 39. Website Template XPath Changes
+
+Several website template elements were renamed/removed in Odoo 19. Inherited views using XPath must be updated:
+
+| Old XPath target | Replacement |
+|-----------------|-------------|
+| `//div[@id='o_product_terms_and_share']` | `//div[@id='product_full_description']` |
+| `//td[@id='product_name']` | `//td[@name='td_product_name']` |
+
+---
+
+## 40. _constraints List Format → Named Class Attributes
+
+The `_constraints` list syntax is no longer supported. Use named class attributes with `models.Constraint`:
+
+```python
+# 18.0
+_constraints = [
+    ('name_uniq', 'unique(name)', 'Name must be unique!'),
+]
+
+# 19.0 (named attribute form)
+_name_uniq = models.Constraint(
+    'unique(name)',
+    'Name must be unique!',
+)
+```
+
+Note: This differs from [Section 15](#15-sql-constraints-refactored) which shows the `_sql_constraints` migration. The old `_constraints` list-of-tuples format is completely removed.
 
 ---
 

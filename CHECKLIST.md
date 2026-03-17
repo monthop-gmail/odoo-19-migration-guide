@@ -22,6 +22,8 @@ Copy this checklist into your PR description or use it as a reference.
 ### Field Renames
 - [ ] `res.groups.users` → `user_ids` (in code AND XML)
 - [ ] `res.users.groups_id` → `group_ids` (in code, XML, CSV — also in `ir.ui.view`, `ir.ui.menu`, `ir.actions`, `ir.actions.report`)
+- [ ] `res.groups.category_id` removed → use `privilege_id` via `res.groups.privilege`
+- [ ] Core field removals: `stock.move.name` → `reference`, `sale.order.line.product_uom` → `product_uom_id`, `res.partner.mobile` removed, etc.
 
 ### API Changes
 - [ ] `models.NewId` → `not isinstance(rec.id, int)`
@@ -42,11 +44,22 @@ Copy this checklist into your PR description or use it as a reference.
 
 ### Model Definition Changes
 - [ ] `_sql_constraints` → `models.Constraint` / `models.Index`
+- [ ] `_constraints` list-of-tuples format → named class attributes with `models.Constraint`
 
 ### Method Changes
 - [ ] `button_draft()` overrides: add `remove_move_reconcile()` if needed
 - [ ] `toggle_active()` → `action_archive()` / `action_unarchive()`
 - [ ] Check stored compute methods for side-effect writes to non-computed fields
+- [ ] `create(self, vals)` → `create(self, vals_list)` — handle list of vals dicts (multi-create API)
+
+### XML / View Changes
+- [ ] `target='inline'` in `ir.actions.act_window` → `target='main'`
+- [ ] Search view `<group>` elements: remove `string` and `expand` attributes
+- [ ] Website template XPath changes: `o_product_terms_and_share` → `product_full_description`, `product_name` → `td_product_name`
+
+### XML ID Changes
+- [ ] `product.product_category_all` → `product.product_category_goods`
+- [ ] `product.group_discount_per_so_line` → `sale.group_discount_per_so_line`
 
 ### Controller Changes
 - [ ] `@route(type="json")` → `@route(type="jsonrpc")`
@@ -63,6 +76,9 @@ Copy this checklist into your PR description or use it as a reference.
 
 ### safe_eval()
 - [ ] `safe_eval(expr, globals_dict={...})` → `safe_eval(expr, context={...})`
+
+### ir.default
+- [ ] `ir.default.set` on TransientModel fields broken → use `ir.config_parameter` instead
 
 ### HR Module Changes
 - [ ] `hr.expense.sheet` removed → use `hr.expense` directly

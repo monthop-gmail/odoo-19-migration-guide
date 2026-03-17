@@ -572,6 +572,194 @@ rules:
   # CLEANUP
   # ──────────────────────────────────────────────
 
+  # ──────────────────────────────────────────────
+  # CREATE / MULTI-CREATE API
+  # ──────────────────────────────────────────────
+
+  - id: create-vals-list
+    title: "create(self, vals) → create(self, vals_list) — multi-create API"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'def create\(self,\s*vals\)'
+        context: "Check if the override calls vals.get() or treats vals as a single dict"
+      - pattern: 'vals\.get\('
+        context: "Inside a create() override — vals is now a list of dicts"
+    fix:
+      note: |
+        Rename parameter to vals_list and iterate:
+            def create(self, vals_list):
+                if not isinstance(vals_list, list):
+                    vals_list = [vals_list]
+                for vals in vals_list:
+                    if vals.get('key'):
+                        ...
+                return super().create(vals_list)
+    auto_fix: false
+    false_positives:
+      - "vals.get() outside of a create() override is not affected"
+    error_message: "AttributeError: 'list' object has no attribute 'get'"
+
+  # ──────────────────────────────────────────────
+  # RES.GROUPS CATEGORY → PRIVILEGE
+  # ──────────────────────────────────────────────
+
+  - id: field-groups-category-id
+    title: "res.groups: category_id → privilege_id via res.groups.privilege"
+    severity: error
+    file_types: ["*.xml", "*.py"]
+    detect:
+      - pattern: 'category_id'
+        context: "On res.groups records — category_id is replaced by privilege_id"
+    fix:
+      note: |
+        1. Create a res.groups.privilege record with the category_id
+        2. Replace category_id on res.groups with privilege_id pointing to the privilege record
+    auto_fix: false
+    false_positives:
+      - "category_id on other models (ir.module.category, product.category, etc.) is not affected"
+    error_message: "ValueError: Invalid field 'category_id' in 'res.groups'"
+
+  # ──────────────────────────────────────────────
+  # ACTION TARGET INLINE
+  # ──────────────────────────────────────────────
+
+  - id: action-target-inline
+    title: "ir.actions.act_window: target='inline' → target='main'"
+    severity: error
+    file_types: ["*.xml", "*.py"]
+    detect:
+      - pattern: 'target.*inline'
+        context: "In ir.actions.act_window records"
+    fix:
+      search: "inline"
+      replace: "main"
+      note: "Only in ir.actions.act_window target field"
+    auto_fix: true
+    false_positives:
+      - "The word 'inline' in comments or non-action contexts"
+    error_message: "ValueError: Invalid target 'inline' for ir.actions.act_window"
+
+  # ──────────────────────────────────────────────
+  # SEARCH VIEW GROUP ATTRIBUTES
+  # ──────────────────────────────────────────────
+
+  - id: search-view-group-attrs
+    title: "Search view <group> elements: string/expand attributes removed"
+    severity: error
+    file_types: ["*.xml"]
+    detect:
+      - pattern: '<group\s+expand='
+        context: "In search views — expand attribute no longer supported"
+      - pattern: '<group\s+string='
+        context: "In search views — string attribute no longer supported on group"
+      - pattern: '<group\s+expand=.*string='
+    fix:
+      note: |
+        Remove string and expand attributes from <group> elements in search views:
+            <group expand="0" string="Group By"> → <group>
+    auto_fix: false
+    false_positives:
+      - "group elements in non-search views may still support these attributes"
+
+  # ──────────────────────────────────────────────
+  # IR.DEFAULT TRANSIENT MODEL
+  # ──────────────────────────────────────────────
+
+  - id: ir-default-transient
+    title: "ir.default.set broken for TransientModel fields"
+    severity: warning
+    file_types: ["*.xml", "*.py"]
+    detect:
+      - pattern: 'ir\.default'
+        context: "Check if setting defaults for TransientModel fields (e.g. res.config.settings)"
+    fix:
+      note: |
+        ir.default.set via XML function calls no longer works for TransientModel fields
+        because the field_id lookup returns null.
+        Use Python defaults or ir.config_parameter instead.
+    auto_fix: false
+    false_positives:
+      - "ir.default.set for regular Model fields still works"
+
+  # ──────────────────────────────────────────────
+  # CORE FIELD REMOVALS
+  # ──────────────────────────────────────────────
+
+  - id: field-removals-core
+    title: "Field removals/renames in core models (Webkul/Marketplace-relevant)"
+    severity: error
+    file_types: ["*.py", "*.xml"]
+    detect:
+      - pattern: 'stock\.move.*\bname\b'
+        context: "stock.move.name → reference"
+      - pattern: 'product_uom_category_id'
+        context: "Removed from stock.move and sale.order.line"
+      - pattern: 'product_uom\b'
+        context: "sale.order.line.product_uom → product_uom_id"
+      - pattern: 'procurement_group_id'
+        context: "Removed from sale.order"
+      - pattern: 'uom_po_id'
+        context: "Removed from product.template"
+      - pattern: '_get_default_category_id'
+        context: "Removed from product.template"
+    fix:
+      note: |
+        Key renames:
+          stock.move.name → reference
+          sale.order.line.product_uom → product_uom_id
+        Key removals:
+          stock.picking.date (use scheduled_date), stock.picking.group_id,
+          stock.move.product_uom_category_id, sale.order.line.product_uom_category_id,
+          sale.order.procurement_group_id, product.template.uom_po_id,
+          product.template._get_default_category_id(), res.partner.mobile
+    auto_fix: false
+    false_positives:
+      - "product_uom could be a custom field on another model"
+      - "name on stock.move could be in unrelated context"
+
+  # ──────────────────────────────────────────────
+  # XML ID CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: xml-id-changes
+    title: "XML ID changes in core modules"
+    severity: error
+    file_types: ["*.py", "*.xml", "*.csv"]
+    detect:
+      - pattern: 'product\.product_category_all'
+        context: "Renamed to product.product_category_goods"
+      - pattern: 'product\.group_discount_per_so_line'
+        context: "Moved to sale.group_discount_per_so_line"
+    fix:
+      note: |
+        product.product_category_all → product.product_category_goods
+        product.group_discount_per_so_line → sale.group_discount_per_so_line
+    auto_fix: false
+    false_positives: []
+    error_message: "ValueError: External ID not found in the system"
+
+  # ──────────────────────────────────────────────
+  # CONSTRAINTS LIST FORMAT
+  # ──────────────────────────────────────────────
+
+  - id: constraints-list-format
+    title: "_constraints list-of-tuples format → named class attributes with models.Constraint"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: '_constraints\s*=\s*\['
+        context: "Old _constraints list format — must use named class attributes"
+    fix:
+      note: |
+        Replace _constraints list with named class attributes:
+            _constraints = [('name_uniq', 'unique(name)', 'Msg')]
+        becomes:
+            _name_uniq = models.Constraint('unique(name)', 'Msg')
+        Note: this is different from _sql_constraints migration (see model-sql-constraints rule).
+    auto_fix: false
+    false_positives: []
+
   - id: cleanup-migrations-folder
     title: "Delete old migrations/ folder"
     severity: info
@@ -629,6 +817,10 @@ validation:
     - pattern: 'env\.ref\(["\x27]base\.user_demo["\x27]\)'
     - pattern: 'hr\.expense\.sheet'
     - pattern: 'hr\.employee\.base'
+    - pattern: 'target.*inline'
+      scope: "ir.actions.act_window target field only"
+    - pattern: 'product\.product_category_all'
+    - pattern: 'product\.group_discount_per_so_line'
 
   must_exist:
     - pattern: "version.*19\\.0"

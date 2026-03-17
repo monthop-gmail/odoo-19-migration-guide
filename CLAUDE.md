@@ -54,6 +54,9 @@ Run ALL checks from the `validation` section of `migration-rules.yaml`:
 - `env.ref("base.user_demo")` (XML ID removed — create test users explicitly)
 - `hr.expense.sheet` (model removed — use `hr.expense` directly)
 - `hr.employee.base` (model removed — use `hr.employee`)
+- `target.*inline` in ir.actions.act_window (should be `target='main'`)
+- `product.product_category_all` (renamed to `product.product_category_goods`)
+- `product.group_discount_per_so_line` (moved to `sale.group_discount_per_so_line`)
 
 **Needs manual review:**
 - `_search_` methods that check `operator == "="` must also handle `"in"` (optimizer rewrites `=` to `in` before search runs)
@@ -83,7 +86,7 @@ Use the OCA commit convention:
 
 ## File References
 
-- `README.md` — full migration guide with explanations and code examples (31 sections)
+- `README.md` — full migration guide with explanations and code examples (40 sections)
 - `CHECKLIST.md` — copy-paste checklist for PR descriptions
 - `migration-rules.yaml` — machine-readable detection and fix patterns
 
