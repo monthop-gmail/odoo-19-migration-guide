@@ -610,7 +610,7 @@ rules:
     file_types: ["*.xml", "*.py"]
     detect:
       - pattern: 'category_id'
-        context: "On res.groups records — category_id is replaced by privilege_id"
+        context: "ONLY on res.groups records — category_id is replaced by privilege_id. First check _name = 'res.groups' or model='res.groups' before flagging."
     fix:
       note: |
         1. Create a res.groups.privilege record with the category_id
@@ -618,6 +618,8 @@ rules:
     auto_fix: false
     false_positives:
       - "category_id on other models (ir.module.category, product.category, etc.) is not affected"
+      - "Custom category models (e.g. legal.form.category, event.type.category) are very common — verify model context before flagging"
+      - "High false-positive rate: a module with its own category system can generate 50-100+ hits, all false positives"
     error_message: "ValueError: Invalid field 'category_id' in 'res.groups'"
 
   # ──────────────────────────────────────────────
@@ -650,17 +652,20 @@ rules:
     file_types: ["*.xml"]
     detect:
       - pattern: '<group\s+expand='
-        context: "In search views — expand attribute no longer supported"
+        context: "ONLY in search views (arch_type='search') — expand attribute no longer supported. <group> in form/tree views is NOT affected."
       - pattern: '<group\s+string='
-        context: "In search views — string attribute no longer supported on group"
+        context: "ONLY in search views — string attribute no longer supported on <group>. Form views use <group string=...> normally — do NOT touch those."
       - pattern: '<group\s+expand=.*string='
     fix:
       note: |
-        Remove string and expand attributes from <group> elements in search views:
+        Remove string and expand attributes from <group> elements in search views ONLY:
             <group expand="0" string="Group By"> → <group>
+        IMPORTANT: Do NOT remove string= from <group> in form views — those are still valid.
+        To identify search views, look for the parent <search> element or arch_type="search".
     auto_fix: false
     false_positives:
-      - "group elements in non-search views may still support these attributes"
+      - "group elements in form/tree views still support string= — only search views changed"
+      - "High false-positive rate: <group string=...> in form views is very common and must NOT be changed"
 
   # ──────────────────────────────────────────────
   # IR.DEFAULT TRANSIENT MODEL
@@ -784,10 +789,11 @@ version_bump:
       replace: "19.0.1.0.0"
   readme:
     detect: '18\.0'
-    files: ["README.rst", "static/description/index.html"]
+    files: ["README.rst", "README.md", "static/description/index.html"]
     fix:
       search: "18.0"
       replace: "19.0"
+      note: "Also check other markdown docs (USER_GUIDE.md, CONTRIBUTING.md, etc.) for version references"
 
 # ──────────────────────────────────────────────
 # POST-MIGRATION VALIDATION

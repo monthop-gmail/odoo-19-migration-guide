@@ -7,6 +7,33 @@ Covers breaking changes, deprecated APIs, and migration patterns with real code 
 
 ---
 
+## AI Agent Usage
+
+This repo is optimized for AI-assisted migration. Point your AI agent at this repo and it will know what to do.
+
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Agent instructions — workflow, rules, and guardrails |
+| `migration-rules.yaml` | Machine-readable detect/fix patterns with regex, severity, and auto-fix flags |
+| `README.md` | Full guide with explanations and code examples (this file) |
+| `CHECKLIST.md` | Copy-paste checklist for PR descriptions |
+
+### Quick start with Claude Code
+
+```bash
+# From your Odoo module directory:
+claude "Migrate this module from Odoo 18 to 19. Use the guide at /path/to/odoo-19-migration-guide"
+```
+
+The agent will:
+1. Scan your module against all known breaking changes
+2. Auto-fix safe patterns (field renames, `_context`, `auto_join`)
+3. Flag patterns that need human review (`button_draft`, compute side effects)
+4. Bump version and update URLs
+5. Validate that no known issues remain
+
+---
+
 ## Table of Contents
 
 1. [Field Renames](#1-field-renames)
@@ -1063,33 +1090,6 @@ _name_uniq = models.Constraint(
 ```
 
 Note: This differs from [Section 15](#15-sql-constraints-refactored) which shows the `_sql_constraints` migration. The old `_constraints` list-of-tuples format is completely removed.
-
----
-
-## AI Agent Usage
-
-This repo is optimized for AI-assisted migration. Point your AI agent at this repo and it will know what to do.
-
-| File | Purpose |
-|------|---------|
-| `CLAUDE.md` | Agent instructions — workflow, rules, and guardrails |
-| `migration-rules.yaml` | Machine-readable detect/fix patterns with regex, severity, and auto-fix flags |
-| `README.md` | Full guide with explanations and code examples (this file) |
-| `CHECKLIST.md` | Copy-paste checklist for PR descriptions |
-
-### Quick start with Claude Code
-
-```bash
-# From your Odoo module directory:
-claude "Migrate this module from Odoo 18 to 19. Use the guide at /path/to/odoo-19-migration-guide"
-```
-
-The agent will:
-1. Scan your module against all known breaking changes
-2. Auto-fix safe patterns (field renames, `_context`, `auto_join`)
-3. Flag patterns that need human review (`button_draft`, compute side effects)
-4. Bump version and update URLs
-5. Validate that no known issues remain
 
 ---
 

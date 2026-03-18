@@ -84,6 +84,15 @@ Use the OCA commit convention:
 - `self.env.ref()` in tests may break if it references demo data — create test data explicitly instead
 - Always read the full context around a match before replacing — at least 5 lines above and below
 
+## Common False Positives (from real migrations)
+
+These rules have high false-positive rates — always verify model context:
+
+- **`category_id`** (rule `field-groups-category-id`): Only affects `res.groups`. Modules with custom category models (e.g. `legal.form.category`, `event.type.category`) will generate many false hits. Check `_name` or `model=` attribute before flagging.
+- **`<group string=`** (rule `search-view-group-attrs`): Only affects search views. Form views use `<group string="...">` normally — do NOT change those. Look for the parent `<search>` element to confirm.
+- **`self.env.ref()`** (rule `test-demo-data`): Only problematic when referencing demo data XML IDs (`base.res_partner_*`, `base.user_demo`). References to the module's own XML IDs (e.g. `legal_forms.action_report_*`) are safe.
+- **`@api.depends`** (rule `method-compute-side-effects`): Only problematic when the compute writes to fields OTHER than the computed field. Simple count/preview computes are safe.
+
 ## File References
 
 - `README.md` — full migration guide with explanations and code examples (40 sections)
