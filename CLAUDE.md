@@ -60,6 +60,8 @@ Run ALL checks from the `validation` section of `migration-rules.yaml`:
 
 **Needs manual review:**
 - `_search_` methods that check `operator == "="` must also handle `"in"` (optimizer rewrites `=` to `in` before search runs)
+- `company_id` in `account.account` create/write — field removed in 19.0; use `.with_company()` on environment instead
+- `'consu'` in product.template type — renamed to `'goods'`; `'product'` removed (use `'goods'` + `is_storable=True`)
 
 **Must exist:**
 - Version `19.0.x.x.x` in `__manifest__.py`
@@ -92,6 +94,8 @@ These rules have high false-positive rates — always verify model context:
 - **`<group string=`** (rule `search-view-group-attrs`): Only affects search views. Form views use `<group string="...">` normally — do NOT change those. Look for the parent `<search>` element to confirm.
 - **`self.env.ref()`** (rule `test-demo-data`): Only problematic when referencing demo data XML IDs (`base.res_partner_*`, `base.user_demo`). References to the module's own XML IDs (e.g. `legal_forms.action_report_*`) are safe.
 - **`@api.depends`** (rule `method-compute-side-effects`): Only problematic when the compute writes to fields OTHER than the computed field. Simple count/preview computes are safe.
+- **`company_id`** (rule `field-account-company-id-removed`): Only affects `account.account`. All other models (`account.move`, `res.partner`, `sale.order`, etc.) still have `company_id`. Always verify the model before flagging.
+- **`'consu'`** (rule `field-product-type-consu-removed`): Only affects `product.template.type` selection. Could appear in comments, variable names, or unrelated strings.
 
 ## File References
 

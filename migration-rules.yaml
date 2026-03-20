@@ -781,6 +781,70 @@ rules:
 # VERSION BUMP (always apply)
 # ──────────────────────────────────────────────
 
+  # ──────────────────────────────────────────────
+  # ACCOUNTING MODEL CHANGES
+  # ──────────────────────────────────────────────
+
+  - id: field-account-company-id-removed
+    title: "account.account: company_id field removed"
+    severity: error
+    file_types: ["*.py", "*.xml", "*.csv"]
+    detect:
+      - pattern: 'company_id.*account\.account'
+        context: "account.account create/write with company_id"
+      - pattern: 'account\.account.*company_id'
+        context: "account.account model with company_id field"
+      - pattern: '"company_id"'
+        context: "In context of account.account create — check model context before flagging"
+    fix:
+      replace: "Remove company_id from account.account create/write calls. Use .with_company(company) on env if needed."
+    auto_fix: false
+    false_positives:
+      - "company_id on other models (res.partner, account.move, etc.) is still valid"
+      - "Only account.account lost this field — always check the model context"
+    error_message: "ValueError: Invalid field 'company_id' in 'account.account'"
+    reference: "Discovered during thaiacc-odoo 19.0 migration testing"
+
+  - id: field-product-type-consu-removed
+    title: "product.template: type 'consu' → 'goods'"
+    severity: error
+    file_types: ["*.py", "*.xml", "*.csv"]
+    detect:
+      - pattern: "type.*consu"
+        context: "product.template type field — 'consu' renamed to 'goods'"
+      - pattern: "'consu'"
+        context: "Check if in product.template context"
+      - pattern: '"consu"'
+        context: "Check if in product.template context"
+    fix:
+      search: "consu"
+      replace: "goods"
+    auto_fix: false
+    false_positives:
+      - "'consu' could appear in comments or unrelated strings"
+      - "Only affects product.template.type selection values"
+    error_message: "ValueError: Wrong value for product.template.type: 'consu'"
+
+  - id: model-hr-expense-sheet-workflow
+    title: "hr.expense.sheet workflow methods removed"
+    severity: error
+    file_types: ["*.py"]
+    detect:
+      - pattern: 'action_submit_sheet'
+        context: "hr.expense.sheet method — use expense.action_submit() instead"
+      - pattern: 'approve_expense_sheets'
+        context: "hr.expense.sheet method — use expense.action_approve() instead"
+      - pattern: 'action_sheet_move_create'
+        context: "hr.expense.sheet method — use expense.action_create_move() instead"
+      - pattern: 'sheet_id'
+        context: "hr.expense.sheet_id field removed — check if on hr.expense model"
+    fix:
+      replace: "Replace sheet workflow: action_submit_sheet→action_submit, approve_expense_sheets→action_approve, action_sheet_move_create→action_create_move. Remove sheet_id references."
+    auto_fix: false
+    false_positives:
+      - "sheet_id could be a custom field on a non-expense model"
+    error_message: "AttributeError: 'hr.expense' object has no attribute 'sheet_id'"
+
 version_bump:
   manifest:
     detect: 'version.*18\.0\.'
@@ -827,6 +891,15 @@ validation:
       scope: "ir.actions.act_window target field only"
     - pattern: 'product\.product_category_all'
     - pattern: 'product\.group_discount_per_so_line'
+    - pattern: 'action_submit_sheet'
+    - pattern: 'approve_expense_sheets'
+    - pattern: 'action_sheet_move_create'
+
+  needs_manual_review:
+    - pattern: 'company_id'
+      scope: "account.account create/write only — removed in 19.0"
+    - pattern: "'consu'"
+      scope: "product.template type field — 'consu' renamed to 'goods'"
 
   must_exist:
     - pattern: "version.*19\\.0"

@@ -76,6 +76,9 @@ The agent will:
 38. [XML ID Changes](#38-xml-id-changes)
 39. [Website Template XPath Changes](#39-website-template-xpath-changes)
 40. [_constraints List Format → Named Class Attributes](#40-_constraints-list-format--named-class-attributes)
+41. [account.account: company_id Removed](#41-accountaccount-company_id-removed)
+42. [product.template: type Selection Changed](#42-producttemplate-type-selection-changed)
+43. [hr.expense.sheet Workflow → hr.expense Direct](#43-hrexpensesheet-workflow--hrexpense-direct)
 
 ---
 
@@ -1090,6 +1093,97 @@ _name_uniq = models.Constraint(
 ```
 
 Note: This differs from [Section 15](#15-sql-constraints-refactored) which shows the `_sql_constraints` migration. The old `_constraints` list-of-tuples format is completely removed.
+
+---
+
+## 41. account.account: company_id Removed
+
+In Odoo 19, `account.account` no longer has a `company_id` field. Accounts are now multi-company by design and belong to companies via `company_ids` (Many2many). The company context is determined by the environment.
+
+```python
+# 18.0
+account = self.env["account.account"].create({
+    "code": "215300",
+    "name": "WHT Payable",
+    "account_type": "liability_current",
+    "company_id": self.env.company.id,  # ← This field no longer exists
+})
+
+# 19.0
+account = self.env["account.account"].create({
+    "code": "215300",
+    "name": "WHT Payable",
+    "account_type": "liability_current",
+    # company is determined by the environment — do NOT pass company_id
+})
+```
+
+**Error:** `ValueError: Invalid field 'company_id' in 'account.account'`
+
+This also affects XML data and demo data — remove `company_id` references in `<record model="account.account">`.
+
+> **Tip for tests:** If you need the account in a specific company, use `.with_company(company)` on the environment before creating.
+
+---
+
+## 42. product.template: type Selection Changed
+
+In Odoo 19, `product.template.type` selection values have changed. `"consu"` (consumable) is removed — use `"goods"` instead.
+
+```python
+# 18.0
+product = self.env["product.template"].create({
+    "name": "My Product",
+    "type": "consu",  # consumable
+})
+
+# 19.0
+product = self.env["product.template"].create({
+    "name": "My Product",
+    "type": "goods",  # replaces "consu"
+})
+```
+
+| 18.0 value | 19.0 value | Notes |
+|-----------|-----------|-------|
+| `"consu"` | `"goods"` | Renamed |
+| `"service"` | `"service"` | Unchanged |
+| `"product"` | removed | Storable products use `"goods"` + `is_storable=True` |
+
+**Error:** `ValueError: Wrong value for product.template.type: 'consu'`
+
+---
+
+## 43. hr.expense.sheet Workflow → hr.expense Direct
+
+In Odoo 19, `hr.expense.sheet` is completely removed. The full expense lifecycle (submit → approve → post → payment) now happens directly on `hr.expense` records.
+
+```python
+# 18.0
+sheet = self.env["hr.expense.sheet"].create({
+    "name": "Trip Expenses",
+    "employee_id": employee.id,
+    "expense_line_ids": [(6, 0, expenses.ids)],
+})
+sheet.action_submit_sheet()
+sheet.approve_expense_sheets()
+sheet.action_sheet_move_create()
+
+# 19.0
+expenses.action_submit()
+expenses.action_approve()
+# Post via wizard or direct method
+expenses.action_create_move()  # or use post_expenses_with_wizard in tests
+```
+
+Key changes:
+- No more expense sheets — expenses are submitted/approved directly
+- `expense.sheet_id` → removed
+- `expense.state` now includes all workflow states: `draft`, `submitted`, `approved`, `posted`, `done`
+- Payment register works directly on the expense's `account_move_id`
+- In tests, use `TestExpenseCommon.post_expenses_with_wizard()` helper
+
+See also [Section 29](#29-hrexpensesheet-removed) for the base model removal.
 
 ---
 

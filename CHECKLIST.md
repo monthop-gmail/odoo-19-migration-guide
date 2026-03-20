@@ -84,6 +84,11 @@ Copy this checklist into your PR description or use it as a reference.
 - [ ] `hr.expense.sheet` removed → use `hr.expense` directly
 - [ ] `hr.employee.base` removed → inherit `hr.employee` instead
 - [ ] `res.users.department_id` removed → access via `user.employee_id.department_id`
+- [ ] Expense sheet workflow methods: `action_submit_sheet` → `action_submit`, `approve_expense_sheets` → `action_approve`, `action_sheet_move_create` → `action_create_move`
+
+### Accounting Model Changes
+- [ ] `account.account.company_id` removed → do NOT pass `company_id` in create/write; use `.with_company()` on env if needed
+- [ ] `product.template.type`: `"consu"` → `"goods"`, `"product"` removed → use `"goods"` + `is_storable=True`
 
 ### Test Changes
 - [ ] Company names must be unique (not "My Company")
