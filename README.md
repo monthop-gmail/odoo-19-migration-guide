@@ -79,6 +79,7 @@ The agent will:
 41. [account.account: company_id Removed](#41-accountaccount-company_id-removed)
 42. [product.template: type Selection Changed](#42-producttemplate-type-selection-changed)
 43. [hr.expense.sheet Workflow → hr.expense Direct](#43-hrexpensesheet-workflow--hrexpense-direct)
+44. [Dynamic Date Domains in XML](#44-dynamic-date-domains-in-xml)
 
 ---
 
@@ -1184,6 +1185,54 @@ Key changes:
 - In tests, use `TestExpenseCommon.post_expenses_with_wizard()` helper
 
 See also [Section 29](#29-hrexpensesheet-removed) for the base model removal.
+
+---
+
+## 44. Dynamic Date Domains in XML
+
+Odoo 19 replaces Python date expressions inside XML domains with a compact string syntax. Odoo ships the official converter as `odoo/upgrade_code/18.5-00-domain-dynamic-dates.py`.
+
+**Scope:** only `.xml` files directly inside a `data/`, `report/`, or `views/` folder, and only these three places:
+- `<filter domain="..."/>` (search view filters)
+- `<field name="domain">...</field>`
+- `<field name="domain_force">...</field>` (record rules)
+
+```xml
+<!-- 18.0 -->
+<filter name="recent" domain="[('date', '>', context_today() - relativedelta(days=3))]"/>
+<filter name="this_month" domain="[('date', '>=', context_today() - relativedelta(day=1))]"/>
+
+<!-- 19.0 -->
+<filter name="recent" domain="[('date', '>', '-3d')]"/>
+<filter name="this_month" domain="[('date', '>=', '=1d')]"/>
+```
+
+**Conversion table** (from the converter's own test cases):
+
+| 18.0 expression | 19.0 value |
+|-----------------|-----------|
+| `context_today()` | `'now'` |
+| `datetime.datetime.now()` | `'now'` |
+| `context_today() - relativedelta(days=3)` | `'-3d'` |
+| `(context_today() + relativedelta(months=-1)).strftime('%Y-%m-%d')` | `'today -1m'` |
+| `context_today() - relativedelta(day=1)` | `'=1d'` |
+| `datetime.datetime.combine(context_today() + relativedelta(days=1, weekday=0), datetime.time(0,0,0)).to_utc()` | `'=monday'` |
+
+**Suffix rules:**
+- Relative offset — plural keyword, signed: `days`→`d`, `months`→`m`, `years`→`y`, `weeks`→`w`, `hours`→`H`, `minutes`→`M`, `seconds`→`S` (e.g. `relativedelta(days=-7)` → `-7d`)
+- Absolute set — singular keyword, `=` prefix: `day`→`=Nd`, `month`→`=Nm`, `year`→`=Ny`, `hour`→`=NH`, `minute`→`=NM`, `second`→`=NS`
+- `now` means the current datetime; `today` means midnight of the current date
+- A bare `now ` prefix is dropped: `now -3d` is written `-3d`
+
+**Watch the operator on end-of-day bounds.** `datetime.time(23, 59, 59)` becomes `+1d` *and flips the operator* — `>` becomes `>=`, `<=` becomes `<`. Converting the date but leaving the operator alone shifts the boundary by a day.
+
+**Run Odoo's own converter instead of hand-editing:**
+
+```bash
+odoo-bin upgrade_code --script 18.5-00-domain-dynamic-dates --addons-path /path/to/your/addons --dry-run
+```
+
+Drop `--dry-run` to apply. Use `--from 18.1 --to 19.0` to run every 18→19 script in order. Domains the parser cannot handle are logged and left untouched — check the log and convert those by hand.
 
 ---
 

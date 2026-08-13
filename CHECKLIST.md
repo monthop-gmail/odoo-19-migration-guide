@@ -37,6 +37,8 @@ Copy this checklist into your PR description or use it as a reference.
 - [ ] `odoo.osv.expression` → `odoo.fields.Domain` / `odoo.Domain`
 - [ ] Computed field `_search` methods: return `Domain` object instead of list
 - [ ] Empty list domain handling: explicitly check for `[]`
+- [ ] XML domains with `context_today()` / `relativedelta()` → compact string syntax (`'-3d'`, `'today -1m'`, `'=1d'`); run `odoo-bin upgrade_code --script 18.5-00-domain-dynamic-dates`
+- [ ] End-of-day bounds `datetime.time(23,59,59)` → `'+1d'` **and** flip the operator (`>`→`>=`, `<=`→`<`)
 
 ### Field Definition Changes
 - [ ] `auto_join=True` on One2many → remove entirely

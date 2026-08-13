@@ -845,6 +845,46 @@ rules:
       - "sheet_id could be a custom field on a non-expense model"
     error_message: "AttributeError: 'hr.expense' object has no attribute 'sheet_id'"
 
+  # ──────────────────────────────────────────────
+  # DYNAMIC DATE DOMAINS IN XML
+  # ──────────────────────────────────────────────
+
+  - id: domain-dynamic-dates
+    title: "Dynamic date expressions in XML domains → compact string syntax"
+    severity: error
+    file_types: ["*.xml"]
+    detect:
+      - pattern: 'context_today\s*\('
+        context: "Inside domain=, <field name='domain'>, or <field name='domain_force'> in data/, report/, or views/ XML"
+      - pattern: 'relativedelta\s*\('
+        context: "Date offset inside an XML domain — Python expressions no longer evaluated in 19.0 domains"
+      - pattern: 'datetime\.datetime\.(now|combine)\s*\('
+        context: "Inside an XML domain"
+    fix:
+      note: |
+        Odoo ships the official converter. Prefer running it over hand-editing:
+            odoo-bin upgrade_code --script 18.5-00-domain-dynamic-dates --addons-path <addons> --dry-run
+        Manual conversion table:
+            context_today()                                     → 'now'
+            datetime.datetime.now()                             → 'now'
+            context_today() - relativedelta(days=3)             → '-3d'
+            (context_today() + relativedelta(months=-1))
+                .strftime('%Y-%m-%d')                           → 'today -1m'
+            context_today() - relativedelta(day=1)              → '=1d'
+        Suffixes — relative (plural keyword, signed): days=d months=m years=y
+        weeks=w hours=H minutes=M seconds=S
+        Suffixes — absolute (singular keyword, '=' prefix): day==Nd month==Nm
+        year==Ny hour==NH minute==NM second==NS
+        'now' = current datetime, 'today' = midnight. A leading 'now ' is dropped.
+        OPERATOR FLIP: datetime.time(23,59,59) → '+1d' AND changes the operator
+        ('>' becomes '>=', '<=' becomes '<'). Converting the date without the
+        operator shifts the boundary by one day.
+    auto_fix: false
+    scope: "Only .xml files in data/, report/, or views/ — and only in domain=, <field name='domain'>, <field name='domain_force'>"
+    false_positives:
+      - "relativedelta/context_today inside .py files — this rule is XML domains only"
+      - "context_today() in a <field name='...'> that is not domain/domain_force"
+
 version_bump:
   manifest:
     detect: 'version.*18\.0\.'

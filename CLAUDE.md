@@ -62,6 +62,7 @@ Run ALL checks from the `validation` section of `migration-rules.yaml`:
 - `_search_` methods that check `operator == "="` must also handle `"in"` (optimizer rewrites `=` to `in` before search runs)
 - `company_id` in `account.account` create/write — field removed in 19.0; use `.with_company()` on environment instead
 - `'consu'` in product.template type — renamed to `'goods'`; `'product'` removed (use `'goods'` + `is_storable=True`)
+- `context_today()` / `relativedelta()` / `datetime.datetime.now()` inside XML domains — Odoo 19 uses a compact string syntax (`'-3d'`, `'today -1m'`, `'=1d'`). XML only (`data/`, `report/`, `views/`), and only in `domain=`, `<field name="domain">`, `<field name="domain_force">`
 
 **Must exist:**
 - Version `19.0.x.x.x` in `__manifest__.py`
@@ -85,6 +86,7 @@ Use the OCA commit convention:
 - Test files need extra attention: company names must be unique, psycopg imports must handle both v2/v3, demo data is not available
 - `self.env.ref()` in tests may break if it references demo data — create test data explicitly instead
 - Always read the full context around a match before replacing — at least 5 lines above and below
+- Odoo ships official converters for some of these changes in `odoo/upgrade_code/` (scripts named `18.1-*` through `18.5-*` are the 18→19 ones). Prefer running them over hand-editing: `odoo-bin upgrade_code --script <name> --addons-path <addons> --dry-run`
 
 ## Common False Positives (from real migrations)
 
@@ -96,10 +98,11 @@ These rules have high false-positive rates — always verify model context:
 - **`@api.depends`** (rule `method-compute-side-effects`): Only problematic when the compute writes to fields OTHER than the computed field. Simple count/preview computes are safe.
 - **`company_id`** (rule `field-account-company-id-removed`): Only affects `account.account`. All other models (`account.move`, `res.partner`, `sale.order`, etc.) still have `company_id`. Always verify the model before flagging.
 - **`'consu'`** (rule `field-product-type-consu-removed`): Only affects `product.template.type` selection. Could appear in comments, variable names, or unrelated strings.
+- **`relativedelta` / `context_today`** (rule `domain-dynamic-dates`): Only affects XML domains. These appear constantly in `.py` files as ordinary Python and must NOT be touched there.
 
 ## File References
 
-- `README.md` — full migration guide with explanations and code examples (40 sections)
+- `README.md` — full migration guide with explanations and code examples (44 sections)
 - `CHECKLIST.md` — copy-paste checklist for PR descriptions
 - `migration-rules.yaml` — machine-readable detection and fix patterns
 
